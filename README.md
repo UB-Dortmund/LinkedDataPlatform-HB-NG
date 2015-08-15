@@ -8,7 +8,7 @@
 
 # Implementierung der *Linked Data Platform* für die UA-Ruhr-Bibliographie
 
-Hierbei handelt es sich um eine Implementierung der *Linked Data Platform* auf Basis von SolRDF als Triple Store.
+Hierbei handelt es sich um eine Implementierung der [Linked Data Platform](https://github.com/hagbeck/LinkedDataPlatform) auf Basis von SolRDF als Triple Store.
 Die Implementierung wird für das Backend des Projekts [hb_ng](https://github.com/ubbochum/hb_ng) verwendet.
 
 ## Kontakt

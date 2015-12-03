@@ -46,6 +46,14 @@ import org.jdom2.input.SAXBuilder;
 import org.jdom2.output.XMLOutputter;
 import org.jdom2.transform.JDOMSource;
 import org.openrdf.model.Statement;
+import org.openrdf.model.URI;
+import org.openrdf.model.Value;
+import org.openrdf.model.ValueFactory;
+import org.openrdf.model.impl.ValueFactoryImpl;
+import org.openrdf.query.BindingSet;
+import org.openrdf.query.TupleQueryResult;
+import org.openrdf.query.impl.TupleQueryResultBuilder;
+import org.openrdf.query.resultio.sparqlxml.SPARQLResultsXMLParser;
 import org.openrdf.rio.RDFFormat;
 import org.openrdf.rio.RDFParser;
 import org.openrdf.rio.RDFWriter;
@@ -57,17 +65,12 @@ import javax.json.JsonArray;
 import javax.json.JsonObject;
 import javax.json.JsonReader;
 import javax.xml.transform.stream.StreamSource;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringReader;
-import java.io.StringWriter;
+import java.io.*;
 import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * Implementation of the LinkedDataStorage interface for hb_ng's de.tu_dortmund.ub.hb_ng.data.SolRDF
@@ -86,6 +89,36 @@ public class SolRDF implements LinkedDataStorage {
         this.config = config;
         PropertyConfigurator.configure(this.config.getProperty("service.log4j-conf"));
         this.logger = Logger.getLogger(SolRDF.class.getName());
+    }
+
+    @Override
+    public HashMap<String, String> health(Properties properties) {
+
+        this.logger.info("[" + config.getProperty("service.name") + "] " + "health requested");
+
+        HashMap<String,String> health = new HashMap<String,String>();
+
+        // Teste Verbindung zu SolRDF
+        try {
+
+            this.logger.info("[" + config.getProperty("service.name") + "] " + "SolRDF try to start session");
+
+            new SAXBuilder().build(new URL(this.config.getProperty("storage.search-endpoint") + "&wt=xml"));
+
+            this.logger.info("[" + config.getProperty("service.name") + "] " + "SolRDF ok");
+
+            health.put("SolRDF","ok");
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            this.logger.info("[" + config.getProperty("service.name") + "] " + "SolRDF failed");
+
+            health.put("SolRDF","failed");
+        }
+
+        return health;
     }
 
     @Override
@@ -183,8 +216,8 @@ public class SolRDF implements LinkedDataStorage {
     @Override
     public String getAccessRights(String graph, String uri) throws LinkedDataStorageException {
 
-        this.logger.info("getAccessRights: " + graph);
-        this.logger.info("getAccessRights: " + uri);
+        this.logger.info("getAccessRights: graph=" + graph);
+        this.logger.info("getAccessRights: uri=" + uri);
 
         String accessRights = "";
 
@@ -195,11 +228,11 @@ public class SolRDF implements LinkedDataStorage {
         else {
 
             // TODO config.properties
-            String sparql = "SELECT ?o WHERE { <" + uri + "/about> <http://purl.org/dc/terms#accessRights> ?o }";
+            String sparql = "SELECT ?o WHERE { GRAPH <http://data.ub.tu-dortmund.de/graph/" + this.config.getProperty("storage.graph.main") + "-public> { <" + uri + "/about> <http://purl.org/dc/terms#accessRights> ?o } }";
 
             try {
 
-                JsonReader jsonReader = Json.createReader(IOUtils.toInputStream(this.sparqlQuery(graph, URLEncoder.encode(sparql, "UTF-8"), "json"), "UTF-8"));
+                JsonReader jsonReader = Json.createReader(IOUtils.toInputStream(this.sparqlQuery(graph, URLEncoder.encode(sparql, "UTF-8"), "application/sparql-results+json;charset=UTF-8"), "UTF-8"));
 
                 JsonObject jsonObject = jsonReader.readObject();
 
@@ -276,61 +309,28 @@ public class SolRDF implements LinkedDataStorage {
 
         try {
 
-            this.logger.info("sparqlQuery: " + graph);
-            this.logger.info("sparqlQuery: " + queryString);
-            this.logger.info("sparqlQuery: " + URLDecoder.decode(queryString, "UTF-8"));
-            this.logger.info("sparqlQuery: " + format);
-            this.logger.info("sparqlQuery: " + isAuthorized);
+            this.logger.info("sparqlQuery: graph=" + graph);
+            this.logger.info("sparqlQuery: queryString=" + queryString);
+            this.logger.info("sparqlQuery: queryString=" + URLDecoder.decode(queryString, "UTF-8"));
+            this.logger.info("sparqlQuery: format=" + format);
+            this.logger.info("sparqlQuery: isAuthorized=" + isAuthorized);
 
-            if (isAuthorized) {
+            if (format.contains("json")) {
 
-                if (graph != null) {
-
-                    // TODO config
-                    ArrayList<String> graphs = new ArrayList<String>();
-                    graphs.add("http://data.ub.tu-dortmund.de/graph/" + "main-entities" + "-public");
-                    graphs.add("http://data.ub.tu-dortmund.de/graph/" + "main-entities" + "-nonpublic");
-                    graphs.add("http://data.ub.tu-dortmund.de/graph/" + graph + "-public");
-                    graphs.add("http://data.ub.tu-dortmund.de/graph/" + graph + "-nonpublic");
-
-                    queryString = extendSparqlQueryWithGraph(URLDecoder.decode(queryString, "UTF-8"), graphs);
-
-                    // TODO HttpRequest zu de.tu_dortmund.ub.hb_ng.data.SolRDF - publicQueryString
-                    resource = this.postQueryDirectly(queryString, format);
-
-                    this.logger.info(resource);
-                }
-                else {
-
-                    // TODO HttpRequest zu de.tu_dortmund.ub.hb_ng.data.SolRDF - queryString
-                    resource = this.postQueryDirectly(queryString, format);
-
-                    this.logger.info(resource);
-                }
-
+                format = "application/sparql-results+json";
             }
             else {
 
-                if (graph != null) {
-
-                    // TODO config
-                    ArrayList<String> graphs = new ArrayList<String>();
-                    graphs.add("http://data.ub.tu-dortmund.de/graph/" + "main-entities" + "-public");
-                    graphs.add("http://data.ub.tu-dortmund.de/graph/" + graph + "-public");
-
-                    // TODO extend to public graph
-                    queryString = extendSparqlQueryWithGraph(URLDecoder.decode(queryString, "UTF-8"), graphs);
-                }
-
-                // TODO HttpRequest zu de.tu_dortmund.ub.hb_ng.data.SolRDF
-                resource = this.postQueryDirectly(queryString, format);
-
-                this.logger.info(resource);
+                format = "application/sparql-results+xml";
             }
+
+            // HttpRequest zu de.tu_dortmund.ub.hb_ng.data.SolRDF - queryString
+            resource = this.postQueryDirectly(URLDecoder.decode(queryString, "UTF-8"), format);
+
+            this.logger.info(resource);
         }
         catch (Exception e) {
 
-            e.printStackTrace();
             this.logger.error("[" + this.getClass().getName() + "] " + new Date() + " - ERROR: Requesting Linked Media Framework " + " - " + e.getMessage());
             throw new LinkedDataStorageException(e.getMessage(), e.getCause());
         }
@@ -440,30 +440,71 @@ public class SolRDF implements LinkedDataStorage {
 
     private String doResourceRequest(String graph, String uri, String format, boolean isAuthorized) throws LinkedDataStorageException {
 
-        this.logger.info("doResourceRequest: " + graph);
-        this.logger.info("doResourceRequest: " + uri);
-        this.logger.info("doResourceRequest: " + format);
-        this.logger.info("doResourceRequest: " + isAuthorized);
+        this.logger.info("doResourceRequest: graph=" + graph);
+        this.logger.info("doResourceRequest: uri=" + uri);
+        this.logger.info("doResourceRequest: format=" + format);
+        this.logger.info("doResourceRequest: isAuthorized=" + isAuthorized);
+
+        if (graph == null || graph.equals("")) {
+
+            graph = this.config.getProperty("storage.graph.default");
+        }
+        this.logger.info("doResourceRequest: graph=" + graph);
 
         String result = null;
 
         try {
 
             // query resource in de.tu_dortmund.ub.hb_ng.data.SolRDF
-            String constructQuery = "CONSTRUCT { <" + uri + "> ?p ?o } WHERE { <" + uri + "> ?p ?o }";
+            String selectQuery = "SELECT ?p ?o ?c WHERE { GRAPH ?c { <" + uri + "> ?p ?o } }"; // TODO config
 
-            String resultString = this.sparqlQuery(graph, URLEncoder.encode(constructQuery, "UTF-8"), "xml", isAuthorized);
+            String resultString = this.sparqlQuery(null, URLEncoder.encode(selectQuery, "UTF-8"), "xml", isAuthorized);
 
             // postprocessing
-            RDFParser parser = Rio.createParser(RDFFormat.RDFXML);
+            SPARQLResultsXMLParser xmlRes = new SPARQLResultsXMLParser();
+            TupleQueryResultBuilder build = new TupleQueryResultBuilder();
+            xmlRes.setTupleQueryResultHandler(build);
+
+            ByteArrayInputStream is = new ByteArrayInputStream(resultString.getBytes("UTF-8"));
+            xmlRes.parse(is);
+
+            TupleQueryResult tupleRes = build.getQueryResult();
+            List<String> bindingNames = tupleRes.getBindingNames();
 
             ArrayList<Statement> statements = new ArrayList<Statement>();
-            StatementCollector collector = new StatementCollector(statements);
-            parser.setRDFHandler(collector);
+            ValueFactory valueFactory = ValueFactoryImpl.getInstance();
 
-            parser.parse(new StringReader(resultString), this.config.getProperty("resource.baseurl"));
+            while (tupleRes.hasNext()) {
 
-            if (statements == null || statements.size() == 0) {
+                BindingSet bindingSet = tupleRes.next();
+
+                String predicate = bindingSet.getValue(bindingNames.get(0)).stringValue();
+                String object = bindingSet.getValue(bindingNames.get(1)).stringValue();
+                String context = bindingSet.getValue(bindingNames.get(2)).stringValue();
+
+                // isAuthorized > public + nonpublic
+                if (isAuthorized && context.contains(this.config.getProperty("storage.graph.main")) || context.contains(graph)) {
+
+                    try {
+                        statements.add(valueFactory.createStatement(valueFactory.createURI(uri), valueFactory.createURI(predicate), valueFactory.createURI(object), valueFactory.createURI(context)));
+                    }
+                    catch (IllegalArgumentException e) {
+                        statements.add(valueFactory.createStatement(valueFactory.createURI(uri), valueFactory.createURI(predicate), valueFactory.createLiteral(object), valueFactory.createURI(context)));
+                    }
+                }
+                // !isAuthorized > public
+                if (!isAuthorized && context.endsWith(this.config.getProperty("storage.graph.main") + "-public") || context.endsWith(graph + "-public")) {
+
+                    try {
+                        statements.add(valueFactory.createStatement(valueFactory.createURI(uri), valueFactory.createURI(predicate), valueFactory.createURI(object), valueFactory.createURI(context)));
+                    }
+                    catch (IllegalArgumentException e) {
+                        statements.add(valueFactory.createStatement(valueFactory.createURI(uri), valueFactory.createURI(predicate), valueFactory.createLiteral(object), valueFactory.createURI(context)));
+                    }
+                }
+            }
+
+            if (statements.size() == 0) {
 
                 result = null;
             }
@@ -516,6 +557,7 @@ public class SolRDF implements LinkedDataStorage {
         }
         catch (Exception e) {
 
+            e.printStackTrace();
             this.logger.error("[" + this.getClass().getName() + "] " + new Date() + " - ERROR: Requesting Linked Media Framework: " + uri + " - " + e.getMessage());
             throw new LinkedDataStorageException(e.getMessage(), e.getCause());
         }
@@ -523,6 +565,7 @@ public class SolRDF implements LinkedDataStorage {
         return result;
     }
 
+    // TODO
     private String doSearchRequest(Properties query, String format) throws LinkedDataStorageException {
 
         String result = null;
@@ -654,6 +697,7 @@ public class SolRDF implements LinkedDataStorage {
         return result;
     }
 
+    // TODO unnötig?
     private String extendSparqlQueryWithGraph(String queryString, ArrayList<String> graphs) {
 
         Query query = QueryFactory.create(queryString);
@@ -700,6 +744,12 @@ public class SolRDF implements LinkedDataStorage {
         }
         else if (query.isConstructType()) {
 
+            Map<String,String> prefixMapping = query.getPrologue().getPrefixMapping().getNsPrefixMap();
+            for (String prefix : prefixMapping.keySet()) {
+
+                extendedQuery += "PREFIX " + prefix + ": <" + prefixMapping.get(prefix) + "> ";
+            }
+
             extendedQuery += "CONSTRUCT { ";
 
             for (Triple triple : query.getConstructTemplate().getTriples()) {
@@ -739,7 +789,6 @@ public class SolRDF implements LinkedDataStorage {
 
         String result = null;
 
-        // de.tu_dortmund.ub.hb_ng.data.SolRDF
         String sparql_url = this.config.getProperty("storage.sparql-endpoint");
 
         // HTTP Request
@@ -759,7 +808,7 @@ public class SolRDF implements LinkedDataStorage {
 
             HttpPost httpPost = new HttpPost(sparql_url);
             httpPost.addHeader("Content-Type", "application/sparql-query");
-            httpPost.addHeader("Accept", "application/sparql-results+json;charset=UTF-8");
+            httpPost.addHeader("Accept", format);
             httpPost.setEntity(new StringEntity(query));
 
             CloseableHttpResponse httpResponse = null;

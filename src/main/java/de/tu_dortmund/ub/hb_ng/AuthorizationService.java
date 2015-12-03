@@ -26,11 +26,18 @@ package de.tu_dortmund.ub.hb_ng;
 import de.tu_dortmund.ub.data.ldp.auth.AuthorizationException;
 import de.tu_dortmund.ub.data.ldp.auth.AuthorizationInterface;
 import de.tu_dortmund.ub.util.AEScrypter;
+import org.apache.http.HttpEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.util.HashMap;
 import java.util.Properties;
 
 /**
@@ -96,6 +103,56 @@ public class AuthorizationService implements AuthorizationInterface {
 
             this.logger.info("[" + this.config.getProperty("service.name") + "] " + "Api-Keys not supported!");
         }
+    }
+
+    @Override
+    public HashMap<String,String> health(Properties properties) {
+
+        this.logger.info("[" + config.getProperty("service.name") + "] " + "health requested");
+
+        HashMap<String,String> health = new HashMap<String,String>();
+
+        // Teste Verbindung zu ApiFest
+        try {
+
+            this.logger.info("[" + config.getProperty("service.name") + "] " + "ApiFest try to get data");
+
+            CloseableHttpClient httpclient = HttpClients.createDefault();
+
+            String url = this.config.getProperty("service.oauth20.scopesendpoint");
+            this.logger.debug("[" + config.getProperty("service.name") + "] " + "SCOPES-ENDPOINT-URL: " + url);
+            HttpGet httpGet = new HttpGet(url);
+
+            CloseableHttpResponse httpResponse = httpclient.execute(httpGet);
+
+            try {
+
+                int statusCode = httpResponse.getStatusLine().getStatusCode();
+                HttpEntity httpEntity = httpResponse.getEntity();
+
+
+                EntityUtils.consume(httpEntity);
+            }
+            finally {
+                httpResponse.close();
+            }
+
+            httpclient.close();
+
+            this.logger.info("[" + config.getProperty("service.name") + "] " + "OAuth 2.0/ApiFest ok");
+
+            health.put("OAuth 2.0/ApiFest","ok");
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            this.logger.info("[" + config.getProperty("service.name") + "] " + "OAuth 2.0/ApiFest failed");
+
+            health.put("OAuth 2.0/ApiFest","failed");
+        }
+
+        return health;
     }
 
     /**
